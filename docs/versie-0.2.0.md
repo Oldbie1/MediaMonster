@@ -1,0 +1,13 @@
+# Versie 0.2.0
+- Compacte containerrijen met vaste kolommen: naam, groen, geel, rood, onderhoud.
+- Precies één lamp brandt; overige lampen gedimd. Rood heeft voorrang.
+- Onderhoudspopup: starten, stoppen, herstarten, update controleren, updaten en logs.
+- Backend leest /etc/media-monster-containers.conf bij iedere status-/autorisatiecontrole.
+- Bestandsvolgorde behouden, lege regels/commentaar genegeerd, duplicaten verwijderd.
+- Ontbrekend/ongeldig bestand geeft een fout; geen stilzwijgende vaste lijst.
+- Automatische updatecontrole volgt eveneens deze lijst.
+- Live API-lijst vergeleken met het bestand: identiek.
+- 24 API-tests geslaagd. assembleDebug en lintDebug geslaagd.
+- APK-handtekening gecontroleerd; update over 0.1.0 mogelijk.
+- Schermindeling nog niet op een fysiek Android-toestel gecontroleerd.
+- Bij de eerste live controle trad één time-out op. Docker en alle drie opslaglocaties reageerden bij nacontrole; de herhaalde API-controle slaagde in 1,15 seconde met exact de twaalf namen uit het bestand. Oorzaak van de tijdelijke vertraging niet vastgesteld.
