@@ -1,0 +1,15 @@
+[Unit]
+Description=Media Monster API
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/mediamonster/api.env
+WorkingDirectory=%h/mediamonster
+ExecStart=/usr/bin/python3 %h/mediamonster/server.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target
