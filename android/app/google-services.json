@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "543293479827",
+    "project_id": "mediamonster-320b9",
+    "storage_bucket": "mediamonster-320b9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:543293479827:android:c23d61b4fbfa5fe274a666",
+        "android_client_info": {
+          "package_name": "nl.mediamonster.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD8F28gzAKeWflK-dlzdnqvRcUS70K6Trg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
