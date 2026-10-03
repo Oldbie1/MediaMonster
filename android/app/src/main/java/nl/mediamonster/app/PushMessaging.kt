@@ -35,6 +35,7 @@ object PushRegistration {
             .put("token", firebaseToken)
             .put("notifyStopped", prefs.getBoolean("notifyStopped", false))
             .put("notifyUpdates", prefs.getBoolean("notifyUpdates", false))
+            .put("notifyAutomaticUpdates", prefs.getBoolean("notifyAutomaticUpdates", true))
             .put("platform", "android")
         scope.launch {
             runCatching { request(address, apiToken, "/v1/push/register", post = true, payload = payload) }

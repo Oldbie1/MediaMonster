@@ -62,3 +62,17 @@ class MonitorTests(unittest.TestCase):
             server.update_monitor(stop)
         refresh.assert_not_called()
 
+    def test_monitor_updates_and_notifies_when_automatic_updates_are_enabled(self):
+        stop = threading.Event()
+        def finish(_):
+            stop.set()
+        with patch("server.refresh_updates"), \
+                patch("server.monitoring_paused", return_value=False), \
+                patch("server.automatic_updates_enabled", return_value=True), \
+                patch("server.update_all", return_value={"updated": ["sonarr"]}) as update_all, \
+                patch.object(server.PUSH, "send_automatic_update_notice") as notice, \
+                patch.object(stop, "wait", side_effect=finish):
+            server.update_monitor(stop)
+        update_all.assert_called_once()
+        notice.assert_called_once_with(["sonarr"])
+

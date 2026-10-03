@@ -11,8 +11,8 @@ android {
         applicationId = "nl.mediamonster.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21
-        versionName = "0.7.3"
+        versionCode = 45
+        versionName = "1.0.13"
     }
     buildFeatures { compose = true }
     compileOptions {

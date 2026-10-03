@@ -1,0 +1,17 @@
+.gradle/
+build/
+local.properties
+.env
+__pycache__/
+*.pyc
+*.jks
+.tools/
+firebase-service-account.json
+push-devices.json
+api.env
+password.hash
+activity.json
+automatic-updates.json
+automatic-recovery.json
+recovery.json
+maintenance.json

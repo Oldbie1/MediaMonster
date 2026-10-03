@@ -78,7 +78,7 @@ class HttpTests(unittest.TestCase):
                 "notifyUpdates": False, "platform": "android",
             }) as response:
                 self.assertEqual(json.load(response), {"ok": True, "pushConfigured": False})
-            register.assert_called_once_with("f" * 40, True, False, "android")
+            register.assert_called_once_with("f" * 40, True, False, True, "android")
 
     def test_password_login_returns_api_token(self):
         password = "testwachtwoord1"

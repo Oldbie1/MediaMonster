@@ -68,7 +68,7 @@ class PushService:
     def _device_key(token):
         return hashlib.sha256(token.encode()).hexdigest()
 
-    def register(self, token, notify_stopped, notify_updates, platform="android"):
+    def register(self, token, notify_stopped, notify_updates, notify_automatic_updates=True, platform="android"):
         if not isinstance(token, str) or not 20 <= len(token) <= 4096:
             raise ValueError("Ongeldig push-token")
         if platform != "android":
@@ -89,6 +89,7 @@ class PushService:
                 "token": token,
                 "notifyStopped": bool(notify_stopped),
                 "notifyUpdates": bool(notify_updates),
+                "notifyAutomaticUpdates": bool(notify_automatic_updates),
                 "platform": platform,
                 "updatedAt": int(time.time()),
                 "events": events,
@@ -116,6 +117,42 @@ class PushService:
         self.send(token, "Media Monster", "De testmelding werkt!", "test", "test",
                   "settings-test-" + str(int(time.time())))
         return {"ok": True}
+
+    def send_automatic_update_notice(self, containers):
+        """Inform every registered Android device once after a successful automatic run."""
+        if not self.configured or not containers:
+            return
+        names = [name for name in containers if isinstance(name, str) and name]
+        if not names:
+            return
+        body = ("Automatisch bijgewerkt: " + ", ".join(names))
+        event_id = "automatic-update-" + str(int(time.time()))
+        with self.lock:
+            devices = list(self._load_devices().items())
+        for key, device in devices:
+            if not device.get("notifyAutomaticUpdates", True):
+                continue
+            try:
+                self.send(device.get("token", ""), "Media Monster", body, event_id,
+                          "automatic-update", event_id + "-" + key[:10])
+            except Exception:
+                continue
+
+    def send_recovery_notice(self, name, recovered):
+        if not self.configured:
+            return
+        body = name + (" is opnieuw gestart" if recovered else " is vastgelopen")
+        event_id = "recovery-" + str(int(time.time()))
+        with self.lock:
+            devices = list(self._load_devices().items())
+        for key, device in devices:
+            if not device.get("notifyStopped"):
+                continue
+            try:
+                self.send(device.get("token", ""), "Media Monster", body, event_id,
+                          "recovery", event_id + "-" + key[:10])
+            except Exception:
+                continue
 
     def _credentials(self):
         data = json.loads(self.credentials.read_text(encoding="utf-8"))
@@ -183,12 +220,17 @@ class PushService:
         for container in status.get("containers", []):
             name = container.get("name", "")
             state = container.get("state")
-            health = container.get("health")
             if device.get("notifyStopped") and state != "unknown":
-                events[name + "|stopped"] = state in ("exited", "dead", "created") or health == "unhealthy"
+                events[name + "|stopped"] = state in ("exited", "dead", "created")
             update = container.get("update") or {}
-            if device.get("notifyUpdates") and update.get("available") is not None:
+            automatic = (status.get("automaticUpdates") or {}).get("enabled") is True
+            if device.get("notifyUpdates") and not automatic and update.get("available") is not None:
                 events[name + "|update"] = update.get("available") is True
+        for disk in status.get("storage", []):
+            free, total = disk.get("free"), disk.get("total")
+            if (disk.get("online") is True and isinstance(free, (int, float))
+                    and isinstance(total, (int, float)) and total > 0):
+                events["storage:" + str(disk.get("name", "Opslag")) + "|storage"] = free / total <= 0.1
         return events
 
     def check(self, status):
@@ -212,8 +254,9 @@ class PushService:
                 remind = isinstance(last_sent, int) and now - last_sent >= self.REMINDER_SECONDS
                 if active and (not was_active or remind):
                     container, kind = event.rsplit("|", 1)
-                    body = (container + " is gestopt of ongezond" if kind == "stopped"
-                            else "Update beschikbaar voor " + container)
+                    body = (container + " is gestopt" if kind == "stopped"
+                            else container.removeprefix("storage:") + " heeft minder dan 10% vrije ruimte"
+                            if kind == "storage" else "Update beschikbaar voor " + container)
                     try:
                         self.send(device["token"], "Media Monster", body, container, kind,
                                   str(now) + "-" + key[:10] + "-" + kind)

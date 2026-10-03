@@ -11,24 +11,59 @@ import shutil
 import subprocess
 import threading
 import time
+from urllib.parse import parse_qs, urlsplit
+from datetime import datetime, timezone
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from push import PushService
 
 CONTAINER_FILE = Path(os.getenv("MM_CONTAINER_FILE", "/etc/media-monster-containers.conf"))
-STORAGE = {"C:": "/mnt/c", "DS224": "/mnt/DS224/video", "DS716": "/mnt/DS716/video"}
+DEFAULT_STORAGE = {"NUC 11": "/mnt/c", "DS224": "/mnt/DS224/video", "DS716": "/mnt/DS716/video"}
 TOKEN = os.getenv("MM_TOKEN", "")
 PASSWORD_HASH = os.getenv("MM_PASSWORD_HASH", "")
 PASSWORD_FILE = Path(os.getenv("MM_PASSWORD_FILE", str(Path(__file__).with_name("password.hash"))))
 APP_RELEASE_FILE = Path(os.getenv("MM_APP_RELEASE_FILE", str(Path(__file__).with_name("app-release.json"))))
 APP_APK_FILE = Path(os.getenv("MM_APP_APK_FILE", str(Path(__file__).with_name("MediaMonster-latest.apk"))))
 MAINTENANCE_FILE = Path(os.getenv("MM_MAINTENANCE_FILE", str(Path(__file__).with_name("maintenance.json"))))
+AUTOMATIC_UPDATES_FILE = Path(os.getenv("MM_AUTOMATIC_UPDATES_FILE", str(Path(__file__).with_name("automatic-updates.json"))))
+AUTOMATIC_RECOVERY_FILE = Path(os.getenv("MM_AUTOMATIC_RECOVERY_FILE", str(Path(__file__).with_name("automatic-recovery.json"))))
+AUTOMATIC_RECOVERY_FILE = Path(os.getenv("MM_AUTOMATIC_RECOVERY_FILE", str(Path(__file__).with_name("automatic-recovery.json"))))
+ACTIVITY_FILE = Path(os.getenv("MM_ACTIVITY_FILE", str(Path(__file__).with_name("activity.json"))))
+RECOVERY_FILE = Path(os.getenv("MM_RECOVERY_FILE", str(Path(__file__).with_name("recovery.json"))))
 UPDATES = {}
 LOCK = threading.Lock()
 ACTION_LOCK = threading.Lock()
 PUSH = PushService()
 LOGIN_LOCK = threading.Lock()
 LOGIN_ATTEMPTS = {}
+ACTIVITY_LOCK = threading.Lock()
+
+def activity_log(event, name="", detail=""):
+    entry = {"at": int(time.time()), "event": event, "container": name, "detail": detail}
+    with ACTIVITY_LOCK:
+        try:
+            entries = json.loads(ACTIVITY_FILE.read_text(encoding="utf-8"))
+            entries = entries if isinstance(entries, list) else []
+        except (OSError, ValueError):
+            entries = []
+        entries.append(entry)
+        temporary = ACTIVITY_FILE.with_suffix(".tmp")
+        temporary.write_text(json.dumps(entries[-10000:], separators=(",", ":")), encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        temporary.replace(ACTIVITY_FILE)
+
+def activities(offset=0, limit=200):
+    if not isinstance(offset, int) or offset < 0:
+        raise ValueError("Ongeldige logboekpagina")
+    try:
+        entries = json.loads(ACTIVITY_FILE.read_text(encoding="utf-8"))
+        entries = list(reversed(entries[-10000:])) if isinstance(entries, list) else []
+        page = entries[offset:offset + limit]
+        next_offset = offset + len(page)
+        return {"entries": page, "hasMore": next_offset < len(entries),
+                "nextOffset": next_offset if next_offset < len(entries) else None}
+    except (OSError, ValueError):
+        return {"entries": []}
 
 def quiet_period(current=None):
     current = current or time.localtime()
@@ -56,6 +91,53 @@ def set_maintenance(minutes):
 
 def monitoring_paused():
     return quiet_period() or maintenance_status()["active"]
+
+def automatic_updates_enabled():
+    try:
+        value = json.loads(AUTOMATIC_UPDATES_FILE.read_text(encoding="utf-8")).get("enabled", False)
+        return value is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+def set_automatic_updates(enabled):
+    if not isinstance(enabled, bool):
+        raise ValueError("Kies of automatische updates aan of uit staan")
+    temporary = AUTOMATIC_UPDATES_FILE.with_suffix(AUTOMATIC_UPDATES_FILE.suffix + ".tmp")
+    temporary.write_text(json.dumps({"enabled": enabled}, separators=(",", ":")), encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    temporary.replace(AUTOMATIC_UPDATES_FILE)
+    return {"enabled": enabled}
+
+def automatic_recovery_enabled():
+    try:
+        return json.loads(AUTOMATIC_RECOVERY_FILE.read_text(encoding="utf-8")).get("enabled", True) is True
+    except (OSError, ValueError, AttributeError):
+        return True
+
+def set_automatic_recovery(enabled):
+    if not isinstance(enabled, bool):
+        raise ValueError("Kies of automatisch herstarten aan of uit staat")
+    temporary = AUTOMATIC_RECOVERY_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps({"enabled": enabled}, separators=(",", ":")), encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    temporary.replace(AUTOMATIC_RECOVERY_FILE)
+    return {"enabled": enabled}
+
+def automatic_recovery_enabled():
+    try:
+        value = json.loads(AUTOMATIC_RECOVERY_FILE.read_text(encoding="utf-8")).get("enabled", True)
+        return value is True
+    except (OSError, ValueError, AttributeError):
+        return True
+
+def set_automatic_recovery(enabled):
+    if not isinstance(enabled, bool):
+        raise ValueError("Kies of automatisch herstarten aan of uit staat")
+    temporary = AUTOMATIC_RECOVERY_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps({"enabled": enabled}, separators=(",", ":")), encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    temporary.replace(AUTOMATIC_RECOVERY_FILE)
+    return {"enabled": enabled}
 
 def app_release():
     data = json.loads(APP_RELEASE_FILE.read_text(encoding="utf-8"))
@@ -200,6 +282,18 @@ def storage(label, path):
     except Exception:
         return {"name": label, "online": False, "free": None, "total": None}
 
+def storage_locations():
+    """Allow each booted operating system to report its own local system disk."""
+    try:
+        configured = json.loads(os.getenv("MM_STORAGE", ""))
+        if not isinstance(configured, dict) or not configured:
+            raise ValueError
+        locations = {str(label): str(path) for label, path in configured.items()
+                     if isinstance(label, str) and isinstance(path, str) and path.startswith("/")}
+        return locations or DEFAULT_STORAGE
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return DEFAULT_STORAGE
+
 def snapshot():
     names = container_names()
     try:
@@ -209,9 +303,12 @@ def snapshot():
         docker = False
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         containers = list(pool.map(container, names)) if docker else []
-        disks = list(pool.map(lambda item: storage(*item), STORAGE.items()))
+        disks = list(pool.map(lambda item: storage(*item), storage_locations().items()))
     return {"timestamp": int(time.time()), "docker": docker, "containers": containers,
-            "storage": disks, "maintenance": maintenance_status()}
+            "storage": disks, "maintenance": maintenance_status(),
+            "automaticUpdates": {"enabled": automatic_updates_enabled()},
+            "automaticRecovery": {"enabled": automatic_recovery_enabled()},
+            "automaticRecovery": {"enabled": automatic_recovery_enabled()}}
 
 def registry_update_available(image, description):
     """Compare registry descriptors, never config digests with index digests."""
@@ -260,9 +357,14 @@ def refresh_updates():
 def update_monitor(stop):
     """Start immediately, then retry failed checks every minute."""
     while not stop.is_set():
-        if not monitoring_paused():
+        if not monitoring_paused() and automatic_recovery_enabled():
             try:
                 refresh_updates()
+                if automatic_updates_enabled():
+                    result = update_all()
+                    if result["updated"]:
+                        activity_log("update", detail=", ".join(result["updated"]))
+                        PUSH.send_automatic_update_notice(result["updated"])
             except Exception:
                 # A temporary Docker/registry failure must not terminate monitoring.
                 pass
@@ -311,7 +413,84 @@ def perform_action(name, operation):
         if time.monotonic() >= deadline:
             raise RuntimeError("Gewenste containerstatus niet bevestigd")
         time.sleep(2)
+    activity_log(operation, name)
     return {"ok": True, "container": container(name)}
+
+def cleanup_unused():
+    """Delete only unmanaged stopped containers whose final stop is older than seven days."""
+    threshold = time.time() - 7 * 24 * 60 * 60
+    managed, removed = set(container_names()), []
+    for line in run("docker", "ps", "-a", "--format", "{{.Names}}\t{{.State}}").splitlines():
+        name, _, state = line.partition("\t")
+        if not name or name in managed or state not in ("exited", "created", "dead"):
+            continue
+        try:
+            finished = run("docker", "inspect", "--format", "{{.State.FinishedAt}}", name)
+            stopped_at = datetime.fromisoformat(finished.replace("Z", "+00:00")).timestamp()
+        except Exception:
+            continue
+        if stopped_at <= threshold:
+            run("docker", "rm", name, timeout=90)
+            removed.append(name)
+    images = run("docker", "image", "prune", "-f", timeout=180)[-500:]
+    activity_log("cleanup", detail=", ".join(removed) if removed else "geen oude ongebruikte containers")
+    return {"removed": removed, "images": images}
+
+def recovery_monitor(stop):
+    """Restart unexpected non-zero exits; stop after five crashes in ten minutes."""
+    try:
+        data = json.loads(RECOVERY_FILE.read_text(encoding="utf-8"))
+        data = data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        data = {}
+    while not stop.is_set():
+        if not monitoring_paused() and automatic_recovery_enabled():
+            now = int(time.time())
+            for name in container_names():
+                try:
+                    info = inspect(name)
+                    state = info["State"]
+                    record = data.setdefault(name, {"crashes": [], "handled": "", "disabled": False, "noticed": False})
+                    finished = state.get("FinishedAt", "")
+                    if state["Status"] == "running":
+                        if record["crashes"] and now >= record["crashes"][0] + 600 and not record["noticed"]:
+                            PUSH.send_recovery_notice(name, True)
+                            activity_log("recovered", name)
+                            record.update({"crashes": [], "disabled": False, "noticed": True})
+                    elif (state.get("ExitCode", 0) != 0 and finished and finished != record["handled"]
+                          and not record["disabled"]):
+                        record["handled"] = finished
+                        record["crashes"] = [item for item in record["crashes"] if now - item < 600] + [now]
+                        record["noticed"] = False
+                        if len(record["crashes"]) >= 5:
+                            record["disabled"] = True
+                            activity_log("crash-loop", name, "vijf crashes binnen tien minuten")
+                        else:
+                            perform_action(name, "restart")
+                    elif (record["disabled"] and record["crashes"]
+                          and now >= record["crashes"][0] + 600 and not record["noticed"]):
+                        PUSH.send_recovery_notice(name, False)
+                        activity_log("crashed", name, "vastgelopen na vijf crashes")
+                        record["noticed"] = True
+                except Exception:
+                    continue
+            temporary = RECOVERY_FILE.with_suffix(".tmp")
+            temporary.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
+            os.chmod(temporary, 0o600)
+            temporary.replace(RECOVERY_FILE)
+        stop.wait(30)
+
+def cleanup_monitor(stop):
+    last = 0
+    while not stop.is_set():
+        now = time.time()
+        if not monitoring_paused() and now - last >= 24 * 60 * 60:
+            try:
+                cleanup_unused()
+                last = now
+            except Exception:
+                pass
+        stop.wait(300)
 
 def action(name, operation):
     if operation not in ("start", "stop", "restart", "update"):
@@ -320,6 +499,9 @@ def action(name, operation):
         raise ValueError("Er loopt al een containeractie")
     try:
         return perform_action(name, operation)
+    except Exception as exc:
+        activity_log(operation + "-failed", name, str(exc))
+        raise
     finally:
         ACTION_LOCK.release()
 
@@ -336,7 +518,8 @@ def update_all():
             try:
                 perform_action(name, "update")
                 updated.append(name)
-            except Exception:
+            except Exception as exc:
+                activity_log("update-failed", name, str(exc))
                 failed.append(name)
         return {"ok": not failed, "updated": updated, "failed": failed, "total": len(targets)}
     finally:
@@ -396,10 +579,23 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized():
             return
         try:
-            if self.path == "/v1/status":
+            parsed = urlsplit(self.path)
+            if parsed.path == "/v1/status" and not parsed.query:
                 return self.reply(200, snapshot())
-            if self.path == "/v1/maintenance":
+            if parsed.path == "/v1/maintenance" and not parsed.query:
                 return self.reply(200, maintenance_status())
+            if parsed.path == "/v1/activity":
+                values = parse_qs(parsed.query, strict_parsing=True)
+                if set(values) - {"offset"} or any(len(value) != 1 for value in values.values()):
+                    raise ValueError("Ongeldige logboekpagina")
+                offset = int(values.get("offset", ["0"])[0])
+                return self.reply(200, activities(offset))
+            if self.path == "/v1/updates/settings":
+                return self.reply(200, {"enabled": automatic_updates_enabled()})
+            if self.path == "/v1/recovery/settings":
+                return self.reply(200, {"enabled": automatic_recovery_enabled()})
+            if self.path == "/v1/recovery/settings":
+                return self.reply(200, {"enabled": automatic_recovery_enabled()})
             if self.path == "/v1/app/update":
                 return self.reply(200, app_release())
             match = re.fullmatch(r"/v1/containers/([a-zA-Z0-9][a-zA-Z0-9_.-]*)/logs", self.path)
@@ -426,11 +622,8 @@ class Handler(BaseHTTPRequestHandler):
                 data = self.json_body()
                 accepted = verify_password(data.get("password"))
             except ValueError:
-                print("login: invalid request; content-length=" + str(self.headers.get("Content-Length", "missing")) +
-                      "; transfer-encoding=" + str(self.headers.get("Transfer-Encoding", "none")), flush=True)
                 return self.reply(400, {"error": "Aanmeldbericht kon niet worden gelezen. Servercontrole nodig."})
             record_login(key, accepted)
-            print("login: " + ("accepted" if accepted else "password mismatch"), flush=True)
             if not accepted:
                 return self.reply(401, {"error": "Onjuist wachtwoord"})
             return self.reply(200, {"token": TOKEN})
@@ -451,13 +644,38 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400, {"error": str(exc)})
             except OSError:
                 return self.reply(503, {"error": "Onderhoudsmodus kon niet worden opgeslagen"})
+        if self.path == "/v1/updates/settings":
+            try:
+                return self.reply(200, set_automatic_updates(self.json_body().get("enabled")))
+            except ValueError as exc:
+                return self.reply(400, {"error": str(exc)})
+            except OSError:
+                return self.reply(503, {"error": "Instelling kon niet worden opgeslagen"})
+        if self.path == "/v1/recovery/settings":
+            try:
+                return self.reply(200, set_automatic_recovery(self.json_body().get("enabled")))
+            except ValueError as exc:
+                return self.reply(400, {"error": str(exc)})
+            except OSError:
+                return self.reply(503, {"error": "Instelling kon niet worden opgeslagen"})
+        if self.path == "/v1/recovery/settings":
+            try:
+                return self.reply(200, set_automatic_recovery(self.json_body().get("enabled")))
+            except ValueError as exc:
+                return self.reply(400, {"error": str(exc)})
+            except OSError:
+                return self.reply(503, {"error": "Instelling kon niet worden opgeslagen"})
         if self.path == "/v1/push/register":
             try:
                 data = self.json_body()
                 if not isinstance(data.get("notifyStopped"), bool) or not isinstance(data.get("notifyUpdates"), bool):
                     raise ValueError("Meldingsvoorkeuren ontbreken")
+                automatic = data.get("notifyAutomaticUpdates", True)
+                if not isinstance(automatic, bool):
+                    raise ValueError("Meldingsvoorkeuren ontbreken")
                 return self.reply(200, PUSH.register(
-                    data.get("token"), data["notifyStopped"], data["notifyUpdates"], data.get("platform", "android")))
+                    data.get("token"), data["notifyStopped"], data["notifyUpdates"], automatic,
+                    data.get("platform", "android")))
             except ValueError as exc:
                 return self.reply(400, {"error": str(exc)})
             except Exception:
@@ -478,6 +696,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(409, {"error": str(exc)})
             except Exception:
                 return self.reply(503, {"error": "Containers bijwerken is mislukt"})
+        if self.path == "/v1/cleanup":
+            try:
+                return self.reply(200, cleanup_unused())
+            except Exception:
+                return self.reply(503, {"error": "Opruimen is mislukt"})
         match = re.fullmatch(r"/v1/containers/([a-zA-Z0-9][a-zA-Z0-9_.-]*)/(start|stop|restart|update|check-update)", self.path)
         if not match:
             return self.reply(404, {"error": "Niet gevonden"})
@@ -496,6 +719,8 @@ if __name__ == "__main__":
     if len(TOKEN) < 32:
         raise SystemExit("Stel MM_TOKEN in met minimaal 32 tekens")
     threading.Thread(target=update_monitor, args=(threading.Event(),), daemon=True, name="update-monitor").start()
+    threading.Thread(target=recovery_monitor, args=(threading.Event(),), daemon=True, name="recovery-monitor").start()
+    threading.Thread(target=cleanup_monitor, args=(threading.Event(),), daemon=True, name="cleanup-monitor").start()
     threading.Thread(target=PUSH.monitor, args=(snapshot, threading.Event(), monitoring_paused), daemon=True, name="push-monitor").start()
     ThreadingHTTPServer((os.getenv("MM_BIND", "127.0.0.1"), int(os.getenv("MM_PORT", "8787"))), Handler).serve_forever()
 

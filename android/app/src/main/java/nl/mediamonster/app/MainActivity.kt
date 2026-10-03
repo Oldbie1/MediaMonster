@@ -6,10 +6,18 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.os.Build
+import android.content.Context
+import android.os.SystemClock
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.contentDescription
@@ -17,8 +25,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
@@ -26,12 +32,17 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -39,6 +50,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URI
+import kotlin.math.abs
 
 private val Green = Color(0xFF77E1AC)
 private val Yellow = Color(0xFFF2CB69)
@@ -159,13 +171,11 @@ private fun startedLabel(value: String): String = runCatching {
     }
 }.getOrDefault("Onbekend")
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences("connection", MODE_PRIVATE)
-        // Recovery migration: 0.7.0 could lock users out when no biometric choice was offered.
-        prefs.edit().putBoolean("biometric", false).apply()
         setContent {
             var paletteName by remember { mutableStateOf(prefs.getString("palette", "monster") ?: "monster") }
             var accentName by remember { mutableStateOf(prefs.getString("accent", "green") ?: "green") }
@@ -183,13 +193,12 @@ class MainActivity : FragmentActivity() {
                 var password by remember { mutableStateOf("") }
                 var passwordVisible by remember { mutableStateOf(false) }
                 var newPassword by remember { mutableStateOf("") }
-                var settings by remember { mutableStateOf(address.isBlank() || token.isBlank()) }
+                var settings by remember { mutableStateOf(false) }
                 var configuration by remember { mutableStateOf(false) }
                 var showColorPicker by remember { mutableStateOf(false) }
                 var showLampPicker by remember { mutableStateOf(false) }
                 var showSortPicker by remember { mutableStateOf(false) }
                 var showPasswordEditor by remember { mutableStateOf(false) }
-                var confirmLogout by remember { mutableStateOf(false) }
                 var configFeedback by remember { mutableStateOf<String?>(null) }
                 var passwordFeedback by remember { mutableStateOf<String?>(null) }
                 var appUpdate by remember { mutableStateOf<JSONObject?>(null) }
@@ -203,28 +212,33 @@ class MainActivity : FragmentActivity() {
                 var error by remember { mutableStateOf<String?>(null) }
                 var message by remember { mutableStateOf<String?>(null) }
                 var logs by remember { mutableStateOf<String?>(null) }
+                var activityLog by remember { mutableStateOf<String?>(null) }
+                var activityOffset by remember { mutableStateOf(0) }
+                var activityHasMore by remember { mutableStateOf(false) }
                 var maintenance by remember { mutableStateOf<JSONObject?>(null) }
                 var details by remember { mutableStateOf<JSONObject?>(null) }
                 var pending by remember { mutableStateOf<Pair<String, String>?>(null) }
                 var showMaintenancePicker by remember { mutableStateOf(false) }
                 var confirmUpdateAll by remember { mutableStateOf(false) }
-                var biometricEnabled by remember { mutableStateOf(prefs.getBoolean("biometric", false)) }
-                var unlocked by remember { mutableStateOf(!biometricEnabled) }
-                var biometricFeedback by remember { mutableStateOf<String?>(null) }
-                var unlockPassword by remember { mutableStateOf("") }
                 var notifyStopped by remember { mutableStateOf(prefs.getBoolean("notifyStopped", false)) }
                 var notifyUpdates by remember { mutableStateOf(prefs.getBoolean("notifyUpdates", false)) }
+                var notifyAutomaticUpdates by remember { mutableStateOf(prefs.getBoolean("notifyAutomaticUpdates", true)) }
+                var automaticUpdates by remember { mutableStateOf(false) }
+                var automaticRecovery by remember { mutableStateOf(true) }
+                var showEasterEgg by remember { mutableStateOf(false) }
                 val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
                     if (!granted) {
-                        notifyStopped = false; notifyUpdates = false
-                        prefs.edit().putBoolean("notifyStopped", false).putBoolean("notifyUpdates", false).apply()
+                        notifyStopped = false; notifyUpdates = false; notifyAutomaticUpdates = false
+                        prefs.edit().putBoolean("notifyStopped", false).putBoolean("notifyUpdates", false)
+                            .putBoolean("notifyAutomaticUpdates", false).apply()
                     }
                     Monitoring.schedule(this@MainActivity)
                 }
-                fun saveNotifications(stopped: Boolean, updates: Boolean) {
-                    prefs.edit().putBoolean("notifyStopped", stopped).putBoolean("notifyUpdates", updates).apply()
+                fun saveNotifications(stopped: Boolean, updates: Boolean, automatic: Boolean) {
+                    prefs.edit().putBoolean("notifyStopped", stopped).putBoolean("notifyUpdates", updates)
+                        .putBoolean("notifyAutomaticUpdates", automatic).apply()
                     Monitoring.channel(this@MainActivity)
-                    if (Build.VERSION.SDK_INT >= 33 && (stopped || updates))
+                    if (Build.VERSION.SDK_INT >= 33 && (stopped || updates || automatic))
                         permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                     Monitoring.schedule(this@MainActivity)
                     PushRegistration.sync(this@MainActivity)
@@ -274,7 +288,22 @@ class MainActivity : FragmentActivity() {
                                 token = authenticate(normalized, password)
                                 password = ""
                             }
-                            data = request(normalized, token, "/v1/status")
+                            val snapshot = request(normalized, token, "/v1/status")
+                            data = snapshot
+                            automaticUpdates = snapshot.optJSONObject("automaticUpdates")
+                                ?.optBoolean("enabled") == true
+                            if (automaticUpdates && (notifyUpdates || !notifyAutomaticUpdates)) {
+                                notifyUpdates = false
+                                notifyAutomaticUpdates = true
+                                saveNotifications(notifyStopped, false, true)
+                            } else if (!automaticUpdates &&
+                                (notifyAutomaticUpdates || !notifyUpdates)) {
+                                notifyUpdates = true
+                                notifyAutomaticUpdates = false
+                                saveNotifications(notifyStopped, true, false)
+                            }
+                            automaticRecovery = snapshot.optJSONObject("automaticRecovery")
+                                ?.optBoolean("enabled") != false
                             address = normalized
                             prefs.edit().putString("address", normalized).apply()
                             Credentials.save(this@MainActivity, token)
@@ -285,28 +314,52 @@ class MainActivity : FragmentActivity() {
                         } catch (e: Exception) {
                             error = e.message ?: "NUC niet bereikbaar"
                             data = null
-                            settings = true
                         } finally { busy = false }
                     }
                 }
-                fun logout() {
-                    PushRegistration.unregister(this@MainActivity)
-                    androidx.work.WorkManager.getInstance(this@MainActivity).cancelUniqueWork("container-monitor")
-                    Monitoring.channel(this@MainActivity).cancelAll()
-                    Credentials.clear(this@MainActivity)
-                    prefs.edit()
-                        .remove("address")
-                        .remove("lastMonitorSuccess").remove("lastPushRegistration").apply()
-                    getSharedPreferences("notification-state", MODE_PRIVATE).edit().clear().apply()
-                    address = ""
-                    token = ""
-                    password = ""
-                    newPassword = ""
-                    data = null
-                    error = null
-                    message = null
-                    configuration = false
-                    settings = true
+                fun refreshAndCheckUpdates() {
+                    scope.launch {
+                        busy = true
+                        error = null
+                        val names = objects(data, "containers").mapNotNull {
+                            it.optString("name").takeIf(String::isNotBlank)
+                        }
+                        message = if (names.isEmpty()) "Gegevens vernieuwen…"
+                            else "Updates controleren…"
+                        try {
+                            var failedChecks = 0
+                            for (name in names) {
+                                try {
+                                    request(address, token,
+                                        "/v1/containers/$name/check-update", post = true)
+                                } catch (_: Exception) {
+                                    failedChecks++
+                                }
+                            }
+                            val snapshot = request(address, token, "/v1/status")
+                            data = snapshot
+                            val available = objects(snapshot, "containers").count {
+                                it.optJSONObject("update")?.optBoolean("available") == true
+                            }
+                            val feedback = when {
+                                failedChecks > 0 ->
+                                    "Updatecontrole afgerond · $failedChecks niet gelukt"
+                                available == 0 -> "Updatecontrole afgerond · alles is actueel"
+                                available == 1 -> "Updatecontrole afgerond · 1 update beschikbaar"
+                                else -> "Updatecontrole afgerond · $available updates beschikbaar"
+                            }
+                            message = feedback
+                            scope.launch {
+                                delay(5000)
+                                if (message == feedback) message = null
+                            }
+                        } catch (e: Exception) {
+                            error = e.message ?: "Vernieuwen mislukt"
+                            message = null
+                        } finally {
+                            busy = false
+                        }
+                    }
                 }
                 fun saveLoginPassword() {
                     scope.launch {
@@ -321,21 +374,45 @@ class MainActivity : FragmentActivity() {
                         } finally { busy = false }
                     }
                 }
-                fun unlockApp() {
-                    BiometricLock.authenticate(this@MainActivity, "Media Monster ontgrendelen",
-                        onSuccess = { biometricFeedback = null; unlocked = true },
-                        onError = { biometricFeedback = it })
-                }
-                fun unlockWithPassword() {
+                fun setAutomaticUpdates(enabled: Boolean) {
                     scope.launch {
-                        busy = true; biometricFeedback = null
+                        busy = true; configFeedback = null
                         try {
-                            token = authenticate(address, unlockPassword)
-                            Credentials.save(this@MainActivity, token)
-                            unlockPassword = ""
-                            unlocked = true
+                            val state = request(address, token, "/v1/updates/settings", post = true,
+                                payload = JSONObject().put("enabled", enabled))
+                            val updatesEnabled = state.optBoolean("enabled")
+                            if (updatesEnabled) {
+                                notifyUpdates = false
+                                notifyAutomaticUpdates = true
+                                saveNotifications(notifyStopped, false, true)
+                            } else {
+                                notifyUpdates = true
+                                notifyAutomaticUpdates = false
+                                saveNotifications(notifyStopped, true, false)
+                            }
+                            automaticUpdates = updatesEnabled
+                            val snapshot = data ?: JSONObject()
+                            snapshot.put("automaticUpdates", state)
+                            data = JSONObject(snapshot.toString())
+                            configFeedback = if (automaticUpdates)
+                                "Automatische containerupdates staan aan"
+                            else "Automatische containerupdates staan uit"
                         } catch (e: Exception) {
-                            biometricFeedback = e.message ?: "Ontgrendelen mislukt"
+                            configFeedback = e.message ?: "Instelling kon niet worden opgeslagen"
+                        } finally { busy = false }
+                    }
+                }
+                fun setAutomaticRecovery(enabled: Boolean) {
+                    scope.launch {
+                        busy = true; configFeedback = null
+                        try {
+                            val state = request(address, token, "/v1/recovery/settings", post = true,
+                                payload = JSONObject().put("enabled", enabled))
+                            automaticRecovery = state.optBoolean("enabled")
+                            configFeedback = if (automaticRecovery) "Automatisch herstarten staat aan"
+                                else "Automatisch herstarten staat uit"
+                        } catch (e: Exception) {
+                            configFeedback = e.message ?: "Instelling kon niet worden opgeslagen"
                         } finally { busy = false }
                     }
                 }
@@ -383,18 +460,30 @@ class MainActivity : FragmentActivity() {
                         } finally { busy = false }
                     }
                 }
-                DisposableEffect(Unit) {
-                    val observer = LifecycleEventObserver { _, event ->
-                        if (event == Lifecycle.Event.ON_STOP && biometricEnabled) unlocked = false
+                fun loadActivity(offset: Int = 0) {
+                    scope.launch {
+                        busy = true
+                        try {
+                            val result = request(address, token, "/v1/activity?offset=$offset")
+                            val entries = result.optJSONArray("entries")
+                            val page = (0 until (entries?.length() ?: 0)).joinToString("\n\n") { index ->
+                                val entry = entries!!.getJSONObject(index)
+                                val name = entry.optString("container").takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
+                                val detail = entry.optString("detail").takeIf { it.isNotBlank() }?.let { "\n$it" }.orEmpty()
+                                dateTime(entry.optLong("at")) + " · " + entry.optString("event") + name + detail
+                            }
+                            activityLog = if (offset == 0) page.ifBlank { "Nog geen activiteiten geregistreerd." }
+                                else listOfNotNull(activityLog, page.takeIf { it.isNotBlank() }).joinToString("\n\n")
+                            activityHasMore = result.optBoolean("hasMore")
+                            activityOffset = result.optInt("nextOffset", offset + (entries?.length() ?: 0))
+                        } catch (e: Exception) {
+                            error = e.message ?: "Logboek kon niet worden geladen"
+                        } finally { busy = false }
                     }
-                    this@MainActivity.lifecycle.addObserver(observer)
-                    onDispose { this@MainActivity.lifecycle.removeObserver(observer) }
                 }
-                LaunchedEffect(unlocked, biometricEnabled) {
-                    if (biometricEnabled && !unlocked) {
-                        delay(250)
-                        unlockApp()
-                    } else if (unlocked && address.isNotBlank() && token.isNotBlank()) load()
+                LaunchedEffect(Unit) {
+                    prefs.edit().remove("biometric").apply()
+                    if (address.isNotBlank() && token.isNotBlank()) load()
                 }
                 fun execute(name: String, action: String) {
                     scope.launch {
@@ -414,7 +503,6 @@ class MainActivity : FragmentActivity() {
                             }
                         } catch (e: Exception) {
                             error = e.message ?: "Actie mislukt"
-                            data = null
                         } finally { busy = false }
                     }
                 }
@@ -422,7 +510,9 @@ class MainActivity : FragmentActivity() {
                 Surface(Modifier.fillMaxSize()) {
                     PullToRefreshBox(
                         isRefreshing = busy,
-                        onRefresh = { if (!busy && token.isNotBlank()) load() },
+                        onRefresh = {
+                            if (!busy && token.isNotBlank()) refreshAndCheckUpdates()
+                        },
                         modifier = Modifier.fillMaxSize()
                     ) {
                         LazyColumn(
@@ -430,15 +520,25 @@ class MainActivity : FragmentActivity() {
                             contentPadding = PaddingValues(20.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                        item {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("MEDIA MONSTER", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
-                                    Text("Jouw mediaserver. Onder controle.", color = accent)
-                                }
-                                if (!settings) {
-                                    IconButton(onClick = { configuration = true; configFeedback = null }) {
-                                        Text("⚙", style = MaterialTheme.typography.headlineSmall)
+                        stickyHeader {
+                            Surface(Modifier.fillMaxWidth()) {
+                                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        MonsterTitle()
+                                        Text("Jouw mediaserver. Onder controle.", color = accent)
+                                        if (busy) {
+                                            LinearProgressIndicator(
+                                                Modifier.fillMaxWidth().padding(top = 6.dp, end = 12.dp))
+                                        } else {
+                                            message?.let { Text(it, color = Red,
+                                                style = MaterialTheme.typography.bodySmall) }
+                                        }
+                                    }
+                                    if (!settings) {
+                                        IconButton(onClick = { configuration = true; configFeedback = null }) {
+                                            Text("⚙", style = MaterialTheme.typography.headlineSmall)
+                                        }
                                     }
                                 }
                             }
@@ -446,7 +546,7 @@ class MainActivity : FragmentActivity() {
                         if (settings) item {
                             Card {
                                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text("Verbind met je NUC", style = MaterialTheme.typography.titleLarge)
+                                    Text("Verbinding instellen", style = MaterialTheme.typography.titleLarge)
                                     OutlinedTextField(address, { address = it }, label = { Text("API-adres") },
                                         singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
                                     OutlinedTextField(password, { password = it }, label = { Text("Wachtwoord") },
@@ -462,14 +562,12 @@ class MainActivity : FragmentActivity() {
                                         style = MaterialTheme.typography.bodySmall)
                                     Button(onClick = { load(withPassword = password.isNotBlank() || token.isBlank()) },
                                         enabled = !busy && (token.isNotBlank() || validPassword(password))) {
-                                        Text("Inloggen")
+                                        Text("Opslaan en verbinden")
                                     }
                                 }
                             }
                         }
-                        if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
                         error?.let { detail -> item { Text(detail, color = palette.red) } }
-                        message?.let { detail -> item { Text(detail, color = palette.green) } }
                         data?.let { snapshot ->
                             item {
                                 Text(if (snapshot.optBoolean("docker")) "● NUC verbonden · Docker online"
@@ -501,9 +599,15 @@ class MainActivity : FragmentActivity() {
                                                 if (disk.optBoolean("online")) {
                                                     val free = disk.optDouble("free")
                                                     val total = disk.optDouble("total")
+                                                    val freeRatio = free / total
                                                     Text(space(free) + " vrij van " + space(total))
                                                     LinearProgressIndicator(
-                                                        progress = { (1 - free / total).toFloat().coerceIn(0f, 1f) },
+                                                        progress = { (1 - freeRatio).toFloat().coerceIn(0f, 1f) },
+                                                        color = when {
+                                                            freeRatio <= 0.1 -> palette.red
+                                                            freeRatio <= 0.2 -> palette.yellow
+                                                            else -> palette.green
+                                                        },
                                                         modifier = Modifier.fillMaxWidth())
                                                 } else Text("Niet bereikbaar of niet aangekoppeld", color = palette.red)
                                             }
@@ -553,8 +657,16 @@ class MainActivity : FragmentActivity() {
                                                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                                                         fontWeight = FontWeight.SemiBold)
                                                 }
-                                                StatusLamp("Groen", palette.green, container.optString("color") == "green")
-                                                StatusLamp("Geel", palette.yellow, container.optString("color") == "yellow")
+                                                if (automaticUpdates) {
+                                                    Spacer(Modifier.width(28.dp))
+                                                    StatusLamp("Groen", palette.green,
+                                                        container.optString("color") == "green")
+                                                } else {
+                                                    StatusLamp("Groen", palette.green,
+                                                        container.optString("color") == "green")
+                                                    StatusLamp("Geel", palette.yellow,
+                                                        container.optString("color") == "yellow")
+                                                }
                                                 StatusLamp("Rood", palette.red, container.optString("color") !in listOf("green", "yellow"))
                                                 IconButton(
                                                     onClick = { details = container },
@@ -690,6 +802,18 @@ class MainActivity : FragmentActivity() {
                         AlertDialog(onDismissRequest = { logs = null }, title = { Text("Laatste logregels") },
                             text = { LazyColumn { item { Text(value, style = MaterialTheme.typography.bodySmall) } } },
                             confirmButton = { TextButton(onClick = { logs = null }) { Text("Sluiten") } })
+                    }
+                    activityLog?.let { value ->
+                        AlertDialog(onDismissRequest = { activityLog = null }, title = { Text("Activiteitenlogboek") },
+                            text = { LazyColumn { item { Text(value, style = MaterialTheme.typography.bodySmall) } } },
+                            confirmButton = {
+                                Row {
+                                    if (activityHasMore) TextButton(onClick = { loadActivity(activityOffset) }, enabled = !busy) {
+                                        Text("Oudere activiteiten laden")
+                                    }
+                                    TextButton(onClick = { activityLog = null }) { Text("Sluiten") }
+                                }
+                            })
                     }
                     if (showAppUpdate) {
                         appUpdate?.let { release ->
@@ -911,15 +1035,45 @@ class MainActivity : FragmentActivity() {
                                         }
                                     }
                                     item { HorizontalDivider() }
-                                    item { Text("MELDINGEN", fontWeight = FontWeight.Bold, color = accent) }
+                                    item { Text("AUTOMATISERING", fontWeight = FontWeight.Bold, color = accent) }
                                     item {
-                                        SettingSwitch("Gestopt of ongezond", notifyStopped) {
-                                            notifyStopped = it; saveNotifications(it, notifyUpdates)
+                                        SettingSwitch("Automatisch herstarten", automaticRecovery) {
+                                            setAutomaticRecovery(it)
                                         }
                                     }
                                     item {
-                                        SettingSwitch("Update beschikbaar", notifyUpdates) {
-                                            notifyUpdates = it; saveNotifications(notifyStopped, it)
+                                        Text("Herstart onverwachte stops. Na vijf crashes in tien minuten blijft een container uit.",
+                                            style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    item {
+                                        SettingSwitch("Automatisch bijwerken", automaticUpdates) {
+                                            setAutomaticUpdates(it)
+                                        }
+                                    }
+                                    item {
+                                        Text(if (automaticUpdates)
+                                            "De NUC werkt beschikbare containerupdates zelf bij."
+                                        else
+                                            "Updates krijgen een geel lampje en je werkt ze zelf bij.",
+                                            style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    item { HorizontalDivider() }
+                                    item { Text("MELDINGEN", fontWeight = FontWeight.Bold, color = accent) }
+                                    item {
+                                        SettingSwitch("Container gestopt", notifyStopped) {
+                                            notifyStopped = it; saveNotifications(it, notifyUpdates, notifyAutomaticUpdates)
+                                        }
+                                    }
+                                    item {
+                                        SettingSwitch("Update beschikbaar", notifyUpdates, enabled = !automaticUpdates) {
+                                            notifyUpdates = it; saveNotifications(notifyStopped, it, notifyAutomaticUpdates)
+                                        }
+                                    }
+                                    item {
+                                        SettingSwitch("Automatisch bijgewerkt", notifyAutomaticUpdates,
+                                            enabled = automaticUpdates) {
+                                            notifyAutomaticUpdates = it
+                                            saveNotifications(notifyStopped, notifyUpdates, it)
                                         }
                                     }
                                     item {
@@ -942,13 +1096,10 @@ class MainActivity : FragmentActivity() {
                                         item { Text(feedback, style = MaterialTheme.typography.bodySmall) }
                                     }
                                     item { HorizontalDivider() }
-                                    item { Text("BEVEILIGING", fontWeight = FontWeight.Bold, color = accent) }
+                                    item { Text("ACTIVITEIT", fontWeight = FontWeight.Bold, color = accent) }
                                     item {
-                                        Text("Biometrisch ontgrendelen is in 0.7.2 tijdelijk uitgeschakeld om een blokkade te voorkomen.",
-                                            style = MaterialTheme.typography.bodySmall)
-                                    }
-                                    biometricFeedback?.let { feedback ->
-                                        item { Text(feedback, style = MaterialTheme.typography.bodySmall) }
+                                        OutlinedButton(onClick = { loadActivity() }, enabled = !busy,
+                                            modifier = Modifier.fillMaxWidth()) { Text("Activiteitenlogboek") }
                                     }
                                     item { HorizontalDivider() }
                                     item { Text("APP-UPDATE", fontWeight = FontWeight.Bold, color = accent) }
@@ -995,9 +1146,13 @@ class MainActivity : FragmentActivity() {
                                         }
                                     }
                                     item {
-                                        OutlinedButton(onClick = { configuration = false; confirmLogout = true },
-                                            modifier = Modifier.fillMaxWidth()) {
-                                            Text("Uitloggen", color = palette.red)
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                                            IconButton(onClick = {
+                                                configuration = false
+                                                showEasterEgg = true
+                                            }) {
+                                                Text("🥚", style = MaterialTheme.typography.titleLarge)
+                                            }
                                         }
                                     }
                                 }
@@ -1007,60 +1162,7 @@ class MainActivity : FragmentActivity() {
                             }
                         )
                     }
-                    if (confirmLogout) {
-                        AlertDialog(
-                            onDismissRequest = { confirmLogout = false },
-                            title = { Text("Uitloggen?") },
-                            text = { Text("Je verbinding, opgeslagen toegang en pushregistratie worden van deze telefoon verwijderd.") },
-                            confirmButton = {
-                                TextButton(onClick = { confirmLogout = false; logout() }) {
-                                    Text("Uitloggen", color = palette.red)
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { confirmLogout = false }) { Text("Annuleren") }
-                            }
-                        )
-                    }
-                    if (!unlocked) {
-                        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                            Box(Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    Text("MM", style = MaterialTheme.typography.displayMedium,
-                                        fontWeight = FontWeight.Black, color = accent)
-                                    Text("Media Monster is vergrendeld",
-                                        style = MaterialTheme.typography.titleLarge)
-                                    Text("Gebruik je vingerafdruk of gezichtsherkenning om verder te gaan.",
-                                        style = MaterialTheme.typography.bodyMedium)
-                                    Button(onClick = { biometricFeedback = null; unlockApp() }) {
-                                        Text("Biometrie opnieuw proberen")
-                                    }
-                                    HorizontalDivider()
-                                    Text("Of ontgrendel met je Media Monster-wachtwoord",
-                                        style = MaterialTheme.typography.bodyMedium)
-                                    OutlinedTextField(
-                                        value = unlockPassword,
-                                        onValueChange = { unlockPassword = it },
-                                        label = { Text("Wachtwoord") },
-                                        singleLine = true,
-                                        visualTransformation = PasswordVisualTransformation(),
-                                        enabled = !busy,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Button(onClick = { unlockWithPassword() },
-                                        enabled = !busy && validPassword(unlockPassword),
-                                        modifier = Modifier.fillMaxWidth()) {
-                                        Text("Ontgrendelen met wachtwoord")
-                                    }
-                                    if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                                    biometricFeedback?.let {
-                                        Text(it, style = MaterialTheme.typography.bodySmall, color = palette.red)
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    if (showEasterEgg) EasterEgg { showEasterEgg = false }
                 }
                 }
             }
@@ -1069,10 +1171,101 @@ class MainActivity : FragmentActivity() {
 }
 
 @Composable
-private fun SettingSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun EasterEgg(onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var tiltX by remember { mutableStateOf(0f) }
+    var tiltY by remember { mutableStateOf(0f) }
+    var sick by remember { mutableStateOf(false) }
+    DisposableEffect(context) {
+        val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val listener = object : SensorEventListener {
+            var sampleX = 0f
+            var sampleY = 0f
+            var sampleAt = 0L
+            var wobbleStartedAt = 0L
+            var lastWobbleAt = 0L
+            override fun onSensorChanged(event: SensorEvent) {
+                val x = event.values[0].coerceIn(-5f, 5f)
+                val y = event.values[1].coerceIn(-5f, 5f)
+                val now = SystemClock.elapsedRealtime()
+                tiltX = x
+                tiltY = y
+                if (sampleAt == 0L) {
+                    sampleX = x; sampleY = y; sampleAt = now
+                    return
+                }
+                if (now - sampleAt >= 120L) {
+                    val moved = abs(x - sampleX) + abs(y - sampleY) > 0.24f
+                    sampleX = x; sampleY = y; sampleAt = now
+                    if (moved) {
+                        if (now - lastWobbleAt > 850L) wobbleStartedAt = now
+                        lastWobbleAt = now
+                        if (now - wobbleStartedAt >= 10_000L) sick = true
+                    } else if (now - lastWobbleAt > 850L) {
+                        wobbleStartedAt = 0L
+                        sick = false
+                    }
+                }
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        }
+        manager.registerListener(listener, manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER),
+            SensorManager.SENSOR_DELAY_GAME)
+        onDispose { manager.unregisterListener(listener) }
+    }
+    Surface(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { onDismiss() } },
+        color = MaterialTheme.colorScheme.background) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth(0.88f).aspectRatio(1f), contentAlignment = Alignment.Center) {
+                Image(painter = painterResource(R.drawable.ic_monster), contentDescription = "Media Monster",
+                    modifier = Modifier.fillMaxSize())
+                Row(Modifier.offset(x = 0.dp, y = (-54).dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GooglyEye(tiltX, tiltY, green = sick)
+                    GooglyEye(tiltX, tiltY, green = sick)
+                }
+            }
+            Text("Tik om te sluiten", Modifier.align(Alignment.BottomCenter).padding(32.dp),
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f))
+        }
+    }
+}
+
+@Composable
+private fun GooglyEye(x: Float, y: Float, green: Boolean) {
+    val eyeColor by animateColorAsState(if (green) Color(0xFFC4E4AE) else Color.White, label = "eye color")
+    val pupilColor by animateColorAsState(if (green) Color(0xFF3F6B43) else Color(0xFF15372F), label = "pupil color")
+    Box(Modifier.size(40.dp).background(eyeColor, CircleShape), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(14.dp).offset(
+            x = (x * -4f).coerceIn(-11f, 11f).dp,
+            y = (y * 4f).coerceIn(-11f, 11f).dp
+        )
+            .background(pupilColor, CircleShape))
+    }
+}
+
+@Composable
+private fun MonsterTitle() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Image(painter = painterResource(R.drawable.ic_monster_m_green), contentDescription = null,
+            modifier = Modifier.width(24.dp).height(31.dp))
+        Text("EDIA", color = Green, style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Black)
+        Spacer(Modifier.width(8.dp))
+        Image(painter = painterResource(R.drawable.ic_monster_m_yellow), contentDescription = null,
+            modifier = Modifier.width(24.dp).height(31.dp))
+        Text("ONSTER", color = Yellow, style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Black)
+    }
+}
+
+@Composable
+private fun SettingSwitch(label: String, checked: Boolean, enabled: Boolean = true,
+                          onCheckedChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Text(label, Modifier.weight(1f), color = if (enabled) LocalContentColor.current
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 

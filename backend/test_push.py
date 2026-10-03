@@ -3,7 +3,7 @@ import tempfile
 import unittest
 import threading
 import time
-from unittest.mock import patch
+from unittest.mock import patch, PropertyMock
 from pathlib import Path
 
 from push import PushService, fcm_payload
@@ -43,6 +43,16 @@ class PushTests(unittest.TestCase):
         service = PushService()
         status = {"containers": [{"name": "sonarr", "state": "unknown", "health": None}]}
         self.assertEqual(service.active_events(status, {"notifyStopped": True}), {})
+
+    def test_storage_alert_starts_at_ten_percent_free_space(self):
+        service = PushService()
+        status = {"containers": [], "storage": [
+            {"name": "NUC 11", "online": True, "free": 10, "total": 100},
+            {"name": "DS224", "online": True, "free": 11, "total": 100},
+        ]}
+        events = service.active_events(status, {})
+        self.assertTrue(events["storage:NUC 11|storage"])
+        self.assertFalse(events["storage:DS224|storage"])
 
     def test_unregister_removes_device(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -98,6 +108,21 @@ class PushTests(unittest.TestCase):
                     patch("push.time.time", return_value=1000 + service.REMINDER_SECONDS):
                 service.check(status)
                 send.assert_called_once()
+
+    def test_automatic_update_notice_is_sent_to_each_registered_device(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "devices.json"
+            credentials = Path(directory) / "credentials.json"
+            credentials.write_text("{}")
+            service = PushService(credentials=credentials, devices=path)
+            service.register("a" * 40, False, False)
+            service.register("b" * 40, False, False)
+            with patch.object(PushService, "configured", new_callable=PropertyMock, return_value=True), \
+                    patch.object(service, "send") as send:
+                service.send_automatic_update_notice(["sonarr", "radarr"])
+            self.assertEqual(send.call_count, 2)
+            self.assertTrue(all(call.args[2] == "Automatisch bijgewerkt: sonarr, radarr"
+                                for call in send.call_args_list))
 
 
 if __name__ == "__main__":

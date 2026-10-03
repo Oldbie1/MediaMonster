@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,15 @@ class SafetyTests(unittest.TestCase):
             self.assertEqual(server.set_maintenance(60), {"active": True, "until": 4600})
             self.assertFalse(server.maintenance_status(4600)["active"])
 
+    def test_automatic_updates_are_persisted(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(server, "AUTOMATIC_UPDATES_FILE", Path(directory) / "automatic-updates.json"):
+            self.assertFalse(server.automatic_updates_enabled())
+            self.assertEqual(server.set_automatic_updates(True), {"enabled": True})
+            self.assertTrue(server.automatic_updates_enabled())
+            self.assertEqual(server.set_automatic_updates(False), {"enabled": False})
+            self.assertFalse(server.automatic_updates_enabled())
+
     def test_update_all_only_updates_available_containers_and_continues(self):
         updates = {"sonarr": {"available": True}, "radarr": {"available": False},
                    "lidarr": {"available": True}}
@@ -20,11 +30,29 @@ class SafetyTests(unittest.TestCase):
                 raise RuntimeError("failure")
         with patch.dict(server.UPDATES, updates, clear=True), \
                 patch("server.container_names", return_value=("sonarr", "radarr", "lidarr")), \
-                patch("server.perform_action", side_effect=perform) as action:
+                patch("server.perform_action", side_effect=perform) as action, \
+                patch("server.activity_log") as activity:
             result = server.update_all()
         self.assertEqual([call.args for call in action.call_args_list], [("sonarr", "update"), ("lidarr", "update")])
         self.assertEqual(result["updated"], ["sonarr"])
         self.assertEqual(result["failed"], ["lidarr"])
+        activity.assert_called_once_with("update-failed", "lidarr", "failure")
+
+    def test_activity_log_keeps_ten_thousand_entries_and_paginates(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(server, "ACTIVITY_FILE", Path(directory) / "activity.json"):
+            server.ACTIVITY_FILE.write_text(json.dumps([
+                {"at": item, "event": "test", "container": "", "detail": ""}
+                for item in range(10000)
+            ]))
+            server.activity_log("nieuw")
+            first = server.activities()
+            second = server.activities(200)
+            self.assertEqual(len(json.loads(server.ACTIVITY_FILE.read_text())), 10000)
+            self.assertEqual(first["entries"][0]["event"], "nieuw")
+            self.assertEqual(len(first["entries"]), 200)
+            self.assertTrue(first["hasMore"])
+            self.assertEqual(second["entries"][0]["at"], 9800)
     def test_password_hash_verifies_without_storing_password(self):
         value = server.password_hash("testwachtwoord1", salt=b"s" * 24)
         with patch.object(server, "PASSWORD_HASH", value):
@@ -62,6 +90,10 @@ class SafetyTests(unittest.TestCase):
         with patch("server.os.path.ismount", return_value=False), patch("server.shutil.disk_usage") as usage:
             self.assertFalse(server.storage("DS224", "/mnt/DS224/video")["online"])
             usage.assert_not_called()
+
+    def test_storage_locations_allow_a_different_system_disk_per_boot(self):
+        with patch.dict(server.os.environ, {"MM_STORAGE": '{"NUC 11":"/","DS224":"/mnt/DS224/video"}'}, clear=False):
+            self.assertEqual(server.storage_locations(), {"NUC 11": "/", "DS224": "/mnt/DS224/video"})
     def test_unknown_container_cannot_execute(self):
         with patch("server.run") as run:
             with self.assertRaises(ValueError):

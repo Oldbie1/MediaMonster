@@ -92,11 +92,13 @@ class ContainerMonitor(context: Context, params: WorkerParameters) : CoroutineWo
                 val name = c.getString("name")
                 val state = c.optString("state")
                 if (state == "unknown") continue
-                val stopped = state in listOf("exited", "dead", "created") || c.optString("health") == "unhealthy"
+                val stopped = state in listOf("exited", "dead", "created")
                 val update = c.optJSONObject("update")
                 val events = mutableListOf<Pair<String, Boolean>>()
                 if (prefs.getBoolean("notifyStopped", false)) events += "stopped" to stopped
-                if (prefs.getBoolean("notifyUpdates", false) && update != null && !update.isNull("available"))
+                val automaticUpdates = data.optJSONObject("automaticUpdates")?.optBoolean("enabled") == true
+                if (prefs.getBoolean("notifyUpdates", false) && !automaticUpdates &&
+                    update != null && !update.isNull("available"))
                     events += "update" to update.optBoolean("available")
                 for ((kind, active) in events) {
                     val key = address + "|" + name + "|" + kind
@@ -104,7 +106,7 @@ class ContainerMonitor(context: Context, params: WorkerParameters) : CoroutineWo
                         val open = PendingIntent.getActivity(applicationContext, 0,
                             Intent(applicationContext, MainActivity::class.java),
                             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-                        val message = if (kind == "stopped") "$name is gestopt of ongezond" else "Update beschikbaar voor $name"
+                        val message = if (kind == "stopped") "$name is gestopt" else "Update beschikbaar voor $name"
                         manager.notify(key.hashCode(), Notification.Builder(applicationContext, "containers")
                             .setSmallIcon(R.drawable.ic_notification)
                             .setContentTitle("Media Monster").setContentText(message)

@@ -34,7 +34,13 @@ object BiometricLock {
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    onError(errString.toString())
+                    if (errorCode !in setOf(
+                            BiometricPrompt.ERROR_NEGATIVE_BUTTON,
+                            BiometricPrompt.ERROR_USER_CANCELED,
+                            BiometricPrompt.ERROR_CANCELED
+                        )) {
+                        onError(errString.toString())
+                    }
                 }
             })
         prompt.authenticate(BiometricPrompt.PromptInfo.Builder()
