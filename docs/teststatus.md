@@ -1,29 +1,30 @@
-# Bouw- en teststatus — 5 september 2026
+# Bouw- en teststatus
 
-Historisch verslag van de eerste ontwikkelversie 0.1.0. De huidige app is 1.0.13. Actuele installatie en tests: zie `docs/installatie.md`.
+Huidige bron: 1.0.13, versiecode 45. Gecontroleerd 3 oktober 2026 in deze repo.
 
-Eerste ontwikkelversie 0.1.0.
-- APK: releases/MediaMonster-0.1.0-debug.apk (9.857.035 bytes).
-- SHA256: 5FEC43F9D5717ED844A1F61496EBA6984997D62DB1D831D7F651707F7D00DA08
-- Gradle assembleDebug: geslaagd.
-- Gradle lintDebug: geslaagd.
-- apksigner verify: geslaagd.
-- Backend: 12 tests geslaagd, inclusief HTTP-authenticatie en geweigerde containeracties.
-- Live alleen-lezen: 12 containers en C:/DS224/DS716 correct uitgelezen.
-- Live registrycontrole Sonarr: update beschikbaar; gestopte container blijft rood.
-- Geen productiecontainers gestart, gestopt of bijgewerkt.
+## Backend
+    cd backend
+    python3 -m unittest -v
 
-Bouw: JDK 17, Gradle 8.13, AGP 8.13.2, Kotlin 2.2.21, Compose BOM 2025.08.01, compile/target SDK 36.
-De aanvankelijk gekozen Compose BOM 2026.08.00 vereiste SDK 37/AGP 9.1.
-Daarom gebruikt deze eerste build de oudere compatibele BOM.
+58 tests geslaagd, inclusief:
 
-Nog open voor dagelijks gebruik:
-- API permanent installeren en LAN/Tailscale/WSL-routing verifiëren.
-- App op echte telefoon testen, inclusief schermindeling en netwerkfouten.
-- Start/stop/update end-to-end testen op een geschikte testcontainer.
-- Token veilig persistent bewaren; nu alleen in geheugen.
-- Achtergrondmeldingen en automatische verversing ontbreken.
-- Bij een updatefout volgt een melding; automatische rollback ontbreekt.
+- authenticatie, wachtwoordhash en loginblokkade
+- containerbestand zonder stille fallback
+- digestvergelijking (containerd)
+- updatecontrole onafhankelijk van automatisch herstarten
+- automatische updates onafhankelijk van recovery
+- standaardopslag NUC 11 = `/`, niet `/mnt/c`
+- onderhoudsvensters, pushvoorkeuren en activiteitenlog
 
-Tijdelijke bouwtools en build-cache: %TEMP%/mediamonster-build.
-Tijdelijke API-tests op NUC: /tmp/mediamonster-dev (geen permanente service).
+De tests lezen niet meer `/etc/media-monster-containers.conf` van de host.
+
+## Android
+Bronversie in `android/app/build.gradle.kts`: 1.0.13 / 45.
+JDK 17, compile/target SDK 36. Deze cloud-omgeving heeft geen Android SDK; de APK is hier niet opnieuw gebouwd.
+
+## Releases
+De officiële 1.0.13-APK staat op de NAS en de VM, niet in Git.
+`releases/` in deze repo bevat geen APK meer. Publiceer nieuwe builds als GitHub Release.
+
+## Live-VM
+`/home/marco/mediamonster` is vanuit deze omgeving niet bijgewerkt. Na merge: `backend/install-linux.sh` op de VM draaien, daarna de API-service herstarten.

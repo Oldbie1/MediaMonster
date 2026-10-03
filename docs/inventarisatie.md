@@ -1,19 +1,29 @@
-# Inventarisatie 5 september 2026
+# Inventarisatie
 
-Dit was de alleen-lezen inventarisatie toen Docker nog in Linux/WSL op de NUC11 draaide. De huidige host is een Ubuntu-VM in Proxmox. Opslagmeting gebruikt nu **NUC 11 = `/`** (niet `/mnt/c`). NAS-paden DS224 en DS716 zijn gelijk gebleven.
+Laatst bijgewerkt: 3 oktober 2026. Host en paden horen bij de huidige Ubuntu-VM. De containerlijst en SSH-gegevens komen uit de alleen-lezen inventarisatie van 5 september 2026; die zijn hier niet opnieuw geverifieerd.
 
-Bron destijds: SSH-inventarisatie en eerdere afspraak in "Schrijfproblemen SABnzbd".
+## Host
+- Naam: Media Monster
+- Ubuntu-VM in Proxmox, op de NUC11
+- Live API: `/home/marco/mediamonster`
+- Bron: `\\synology\home\mediamonster` en https://github.com/Oldbie1/MediaMonster
+- Laatst bekende SSH: `marco@192.168.72.23`, poort 12107
+- App: 1.0.13, versiecode 45
 
-- NUC SSH: marco@192.168.72.23, poort 12107.
-- Docker in Linux/WSL; Compose v5.5.0, Python 3.14.4.
-- Containers: sonarr, radarr, sabnzbd, mealie, seerr, prowlarr, homepage, bazarr, homarr, qbittorrent, uptime-kuma, watchtower.
-- Sonarr en Radarr waren tijdens inventarisatie gestopt (exitcode 137). Geen herstel uitgevoerd.
-- Compose Sonarr: /home/marco/docker/sonarr; Radarr: /home/marco/docker/radarr.
-- C: is /mnt/c (9p).
-- DS224: /mnt/DS224/video (CIFS //192.168.72.12/video).
-- DS716: /mnt/DS716/video (CIFS //192.168.72.10/video).
-- /mnt/DS224 en /mnt/DS716 zelf zijn GEEN NAS-mounts; daarop meten zou ten onrechte WSL-opslag tonen.
-- Java, Gradle en Android SDK niet aangetroffen op de ontwikkel-pc.
+## Docker
+- Compose-projecten onder `/home/marco/docker/`
+- Toegestane namen: `/etc/media-monster-containers.conf` (geen stille fallback)
+- Laatst bekende lijst: sonarr, radarr, sabnzbd, mealie, seerr, prowlarr, homepage, bazarr, homarr, qbittorrent, uptime-kuma, watchtower
+- Een draaiende container zonder healthcheck heet "Actief"
+- Updatecontrole mag mislukken: dat is "Onbekend", nooit "Geen update"
 
-Een draaiende container zonder Docker-healthcheck heet "Actief": applicatiegezondheid is daarmee niet bewezen.
-Updatecontrole mag mislukken; dat is "Onbekend" en nooit "Geen update".
+## Opslag
+- NUC 11: `/` (systeenschijf van de Ubuntu-VM)
+- DS224: `/mnt/DS224/video` (CIFS `//192.168.72.12/video`)
+- DS716: `/mnt/DS716/video` (CIFS `//192.168.72.10/video`)
+- `/mnt/DS224` en `/mnt/DS716` zelf zijn geen NAS-volumes; daarop meten toont de VM-schijf
+
+## Netwerk
+- LAN, Tailscale of `https://mm.tenhaaf.nu`
+- Laatst bekende Tailscale-adres: `http://100.108.14.95:8787`
+- Geen Funnel of internet-portforwarding voor de beheer-API

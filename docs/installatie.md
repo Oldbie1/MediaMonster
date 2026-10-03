@@ -12,12 +12,15 @@ Installeer die APK op een Android-telefoon (Android 8 of nieuwer).
 Officiële releases worden vanaf de NUC aangeboden via `/v1/app/update`. Publiceer een nieuwe APK als GitHub Release; zet hem niet als groot binair bestand in Git.
 
 ## API op de Ubuntu-VM
-De live-installatie staat in `/home/marco/mediamonster`. Wijzig die map pas na testen.
+De live-installatie staat in `/home/marco/mediamonster`. Wijzig die map pas na testen van deze bron. Zie ook [api-installatie.md](api-installatie.md).
 
 Gebruik Python 3.11+ onder dezelfde Linux-gebruiker die Docker mag bedienen.
-Vanuit `backend/`:
+Vanuit `backend/`, na merge:
 
     ./install-linux.sh /home/marco/mediamonster
+
+Het script kopieert de API-bron naar de live-map en laat geheimen ongemoeid. Alleen als het inlogwachtwoord nog ontbreekt of opnieuw moet:
+
     ./set-password.sh
 
 `install-linux.sh` maakt `api.env` (mode 0600) aan als die ontbreekt, installeert de user-systemd-unit en zet linger aan. Standaardwaarden in dat script:

@@ -13,8 +13,8 @@ Huidige appversie: **1.0.13** (versiecode 45).
 ## Project
 - android/: Kotlin + Jetpack Compose.
 - backend/: Python 3, zonder externe packages; Docker CLI, Compose en Buildx nodig.
-- docs/: inventarisatie, installatie en versienotities.
-- releases/: oudere APK-bestanden. Nieuwe APK’s horen als GitHub Release, niet als groot binair bestand in de broncode.
+- docs/: [installatie](docs/installatie.md), [API](docs/api-installatie.md), [inventarisatie](docs/inventarisatie.md), [teststatus](docs/teststatus.md), [versies](docs/versies.md).
+- releases/: geen APK in Git. Zie [releases/README.md](releases/README.md).
 
 De API draait op de Ubuntu-VM zodat hij Docker en de NAS-mounts kan uitlezen.
 De actieve installatie staat in `/home/marco/mediamonster`. Wijzig die map pas na testen.

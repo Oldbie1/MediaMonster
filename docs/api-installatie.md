@@ -1,55 +1,51 @@
 # API-installatie
 
-Huidige situatie (1.0.13): Ubuntu-VM in Proxmox. Bron in deze repo; live map `/home/marco/mediamonster`. Installeer of vernieuw via `backend/install-linux.sh`. Standaardopslag is **NUC 11 = `/`**, plus de NAS-mounts DS224 en DS716. Achtergrondupdatecontrole is onafhankelijk van automatisch herstarten.
+Huidige host: Ubuntu-VM in Proxmox. Appversie 1.0.13.
 
-De rest van dit bestand is het installatieverslag van 5 september 2026, toen de API nog via WSL/Windows liep.
+## Live-map
+`/home/marco/mediamonster` is de actieve installatie. Wijzig die pas na testen van deze bron.
 
-## Verslag 5 september 2026
+Kopieer vanuit `backend/` met:
 
-Geïnstalleerd:
-- NUC: /home/marco/mediamonster/server.py
-- Geheim token: /home/marco/mediamonster/api.env, mode 0600.
-- Gebruikersservice: ~/.config/systemd/user/mediamonster-api.service.
-- systemctl --user enable --now mediamonster-api.service uitgevoerd.
-- API luistert uitsluitend op 127.0.0.1:8787.
-- Windows bereikt deze API via WSL localhost-forwarding.
-- Geen token: HTTP 401. Met token: HTTP 200, twaalf containers en drie opslagmetingen.
-- Geen productiecontainers gewijzigd.
+    ./install-linux.sh /home/marco/mediamonster
 
-Nog niet uitgevoerd:
-Tailscale Serve TCP-forwarder, omdat automatische goedkeuringscontrole expliciete toestemming eist:
-    tailscale serve --bg --tcp=8787 tcp://127.0.0.1:8787
+Het script zet `server.py`, `push.py`, `app-release.json`, de systemd-unit en de hulpscripts in de live-map. Het overschrijft geen `api.env`, wachtwoordhash, Firebase-serviceaccount, apparaatregistratie of activiteitenlog.
 
-Na goedkeuring wordt het telefoonadres http://100.108.14.95:8787.
-Dit is uitsluitend bereikbaar binnen het bestaande tailnet en blijft achter API-tokenauthenticatie.
-Geen Funnel, internetportforwarding of nieuwe LAN-firewallregel.
-Tailscale Serve-configuratie was vooraf leeg.
+Daarna, alleen als het wachtwoord nog ontbreekt of opnieuw moet:
 
-Automatisch starten geldt bij starten van de gebruikersmanager. Linger staat momenteel uit.
-Volledige herstartcontrole en toegang vanaf telefoon zijn nog niet uitgevoerd.
+    ./set-password.sh
 
-## Tailscale geactiveerd na expliciete toestemming
-- Tailscale Serve draait blijvend: TCP 8787 naar 127.0.0.1:8787, uitsluitend tailnet.
-- App-adres: http://100.108.14.95:8787
-- Getest vanaf Windows op de NUC via dit Tailscale-adres: HTTP 200 met token, twaalf containers, drie online opslaglocaties.
-- Zonder token: HTTP 401.
-- Het token is aan de gebruiker verstrekt en staat niet in de projectdocumentatie.
-- Een verbinding vanaf de telefoon zelf moet door de gebruiker worden bevestigd.
-- De eerdere sectie "Nog niet uitgevoerd" voor Tailscale Serve is hiermee achterhaald.
+## Bestanden op de VM
+| Bestand | Rol |
+|---|---|
+| `server.py`, `push.py` | API |
+| `app-release.json` | App-updateversie (1.0.13 / 45) |
+| `MediaMonster-latest.apk` | Officiële APK, niet in Git |
+| `api.env` | Token, bind, poort, `MM_STORAGE` (mode 0600) |
+| `password.hash` | Alleen PBKDF2-hash |
+| `firebase-service-account.json` | Server-sleutel, nooit in Git |
+| `automatic-updates.json`, `automatic-recovery.json`, `maintenance.json`, `recovery.json`, `activity.json`, `push-devices.json` | Runtime, nooit in Git |
 
-## Automatische updatecontrole
-De API controleert vanaf nu alle containers op de achtergrond bij het starten.
-Geslaagde resultaten worden circa 15 minuten gecachet; mislukte controles worden na circa één minuut opnieuw geprobeerd.
-Maximaal drie registrycontroles tegelijk. Het dashboard wacht niet op deze controles.
-Er worden geen images opgehaald of updates geïnstalleerd.
-De bestaande APK werkt hiermee: tik op Vernieuwen om de laatste resultaten op te halen.
-Tests: 15 geslaagd, inclusief automatisch starten, cache, retries en herstel na een monitorfout.
+## Standaard `api.env`
+Nieuwe installaties krijgen:
 
-## Correctie digestvergelijking
-De eerdere vergelijking van registry-configdigest met container Image-ID was onjuist voor de containerd image store.
-Nu vergelijkt de API registry-descriptors/repositorydigests van de geïnstalleerde containerimage met de actuele registry.
-Regressietests toegevoegd; totaal 20 tests geslaagd.
-Live resultaat na installatie: uitsluitend Sonarr heeft available=true; de overige elf containers false.
-De eerdere melding dat alle twaalf containers updates hadden was foutief.
-Registrycontrole vereist Docker Buildx, aanwezig op de NUC.
-Referentie: https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/
+    MM_BIND=0.0.0.0
+    MM_PORT=8787
+    MM_STORAGE={"NUC 11":"/","DS224":"/mnt/DS224/video","DS716":"/mnt/DS716/video"}
+
+Zonder `MM_STORAGE` gebruikt `server.py` dezelfde paden. De code luistert zonder `MM_BIND` op `127.0.0.1`; het installatiescript bindt `0.0.0.0` voor LAN. Zet de API niet via port-forwarding open op internet.
+
+## Service
+User-unit: `~/.config/systemd/user/mediamonster-api.service`. Linger wordt door het installatiescript aangezet.
+
+    systemctl --user status mediamonster-api
+
+## Gedrag
+- Achtergrondupdatecontrole start bij de API en is onafhankelijk van automatisch herstarten
+- Geslaagde registrycontroles ongeveer 15 minuten in cache; mislukte na ongeveer 1 minuut opnieuw
+- Automatisch bijwerken en crash-recovery zijn aparte schakelaars
+- Registrycontrole vereist Docker Buildx
+- Referentie: https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/
+
+## Bereik
+HTTP op LAN of Tailscale; HTTPS via `https://mm.tenhaaf.nu`. Zonder token: HTTP 401.

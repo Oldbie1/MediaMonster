@@ -6,6 +6,9 @@ __pycache__/
 *.pyc
 *.jks
 .tools/
+*.apk
+Thumbs.db
+desktop.ini
 firebase-service-account.json
 push-devices.json
 api.env
