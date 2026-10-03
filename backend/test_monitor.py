@@ -17,15 +17,19 @@ class MonitorTests(unittest.TestCase):
         self.assertFalse(server.quiet_period(at(4, 30)))
 
     def test_startup_checks_every_container(self):
-        with patch.dict(server.UPDATES, {}, clear=True), patch("server.check_update") as check:
+        names = ("sonarr", "radarr")
+        with patch("server.container_names", return_value=names), \
+                patch.dict(server.UPDATES, {}, clear=True), patch("server.check_update") as check:
             server.refresh_updates()
-            self.assertCountEqual([c.args[0] for c in check.call_args_list], server.container_names())
+            self.assertCountEqual([c.args[0] for c in check.call_args_list], names)
 
     def test_fresh_results_are_cached_and_failed_results_retried(self):
-        cache = {n: {"available": False, "checkedAt": 950} for n in server.container_names()}
+        names = ("sonarr", "radarr", "sabnzbd")
+        cache = {n: {"available": False, "checkedAt": 950} for n in names}
         cache["sonarr"] = {"available": None, "checkedAt": 900}
         cache["radarr"] = {"available": True, "checkedAt": 50}
-        with patch.dict(server.UPDATES, cache, clear=True), patch("server.time.time", return_value=1000), patch("server.check_update") as check:
+        with patch("server.container_names", return_value=names), \
+                patch.dict(server.UPDATES, cache, clear=True), patch("server.time.time", return_value=1000), patch("server.check_update") as check:
             server.refresh_updates()
             self.assertCountEqual([c.args[0] for c in check.call_args_list], ["sonarr", "radarr"])
 

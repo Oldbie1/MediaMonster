@@ -101,7 +101,7 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(locations["NUC 11"], "/")
         self.assertNotIn("/mnt/c", locations.values())
     def test_unknown_container_cannot_execute(self):
-        with patch("server.run") as run:
+        with patch("server.container_names", return_value=("sonarr",)), patch("server.run") as run:
             with self.assertRaises(ValueError):
                 server.action("not-allowed", "start")
             run.assert_not_called()
