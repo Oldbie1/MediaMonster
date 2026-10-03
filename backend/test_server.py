@@ -94,6 +94,12 @@ class SafetyTests(unittest.TestCase):
     def test_storage_locations_allow_a_different_system_disk_per_boot(self):
         with patch.dict(server.os.environ, {"MM_STORAGE": '{"NUC 11":"/","DS224":"/mnt/DS224/video"}'}, clear=False):
             self.assertEqual(server.storage_locations(), {"NUC 11": "/", "DS224": "/mnt/DS224/video"})
+
+    def test_default_storage_measures_linux_root_not_wsl_c(self):
+        with patch.dict(server.os.environ, {"MM_STORAGE": ""}, clear=False):
+            locations = server.storage_locations()
+        self.assertEqual(locations["NUC 11"], "/")
+        self.assertNotIn("/mnt/c", locations.values())
     def test_unknown_container_cannot_execute(self):
         with patch("server.run") as run:
             with self.assertRaises(ValueError):

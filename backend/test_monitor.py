@@ -76,3 +76,32 @@ class MonitorTests(unittest.TestCase):
         update_all.assert_called_once()
         notice.assert_called_once_with(["sonarr"])
 
+    def test_monitor_checks_updates_when_automatic_recovery_is_disabled(self):
+        stop = threading.Event()
+        def finish(_):
+            stop.set()
+        with patch("server.refresh_updates") as refresh, \
+                patch("server.monitoring_paused", return_value=False), \
+                patch("server.automatic_recovery_enabled", return_value=False), \
+                patch("server.automatic_updates_enabled", return_value=False), \
+                patch("server.update_all") as update_all, \
+                patch.object(stop, "wait", side_effect=finish):
+            server.update_monitor(stop)
+        refresh.assert_called_once()
+        update_all.assert_not_called()
+
+    def test_automatic_updates_run_independently_of_recovery(self):
+        stop = threading.Event()
+        def finish(_):
+            stop.set()
+        with patch("server.refresh_updates"), \
+                patch("server.monitoring_paused", return_value=False), \
+                patch("server.automatic_recovery_enabled", return_value=False), \
+                patch("server.automatic_updates_enabled", return_value=True), \
+                patch("server.update_all", return_value={"updated": ["radarr"]}) as update_all, \
+                patch.object(server.PUSH, "send_automatic_update_notice") as notice, \
+                patch.object(stop, "wait", side_effect=finish):
+            server.update_monitor(stop)
+        update_all.assert_called_once()
+        notice.assert_called_once_with(["radarr"])
+

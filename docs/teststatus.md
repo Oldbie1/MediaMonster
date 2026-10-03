@@ -1,5 +1,7 @@
 # Bouw- en teststatus — 5 september 2026
 
+Historisch verslag van de eerste ontwikkelversie 0.1.0. De huidige app is 1.0.13. Actuele installatie en tests: zie `docs/installatie.md`.
+
 Eerste ontwikkelversie 0.1.0.
 - APK: releases/MediaMonster-0.1.0-debug.apk (9.857.035 bytes).
 - SHA256: 5FEC43F9D5717ED844A1F61496EBA6984997D62DB1D831D7F651707F7D00DA08

@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from push import PushService
 
 CONTAINER_FILE = Path(os.getenv("MM_CONTAINER_FILE", "/etc/media-monster-containers.conf"))
-DEFAULT_STORAGE = {"NUC 11": "/mnt/c", "DS224": "/mnt/DS224/video", "DS716": "/mnt/DS716/video"}
+DEFAULT_STORAGE = {"NUC 11": "/", "DS224": "/mnt/DS224/video", "DS716": "/mnt/DS716/video"}
 TOKEN = os.getenv("MM_TOKEN", "")
 PASSWORD_HASH = os.getenv("MM_PASSWORD_HASH", "")
 PASSWORD_FILE = Path(os.getenv("MM_PASSWORD_FILE", str(Path(__file__).with_name("password.hash"))))
@@ -26,7 +26,6 @@ APP_RELEASE_FILE = Path(os.getenv("MM_APP_RELEASE_FILE", str(Path(__file__).with
 APP_APK_FILE = Path(os.getenv("MM_APP_APK_FILE", str(Path(__file__).with_name("MediaMonster-latest.apk"))))
 MAINTENANCE_FILE = Path(os.getenv("MM_MAINTENANCE_FILE", str(Path(__file__).with_name("maintenance.json"))))
 AUTOMATIC_UPDATES_FILE = Path(os.getenv("MM_AUTOMATIC_UPDATES_FILE", str(Path(__file__).with_name("automatic-updates.json"))))
-AUTOMATIC_RECOVERY_FILE = Path(os.getenv("MM_AUTOMATIC_RECOVERY_FILE", str(Path(__file__).with_name("automatic-recovery.json"))))
 AUTOMATIC_RECOVERY_FILE = Path(os.getenv("MM_AUTOMATIC_RECOVERY_FILE", str(Path(__file__).with_name("automatic-recovery.json"))))
 ACTIVITY_FILE = Path(os.getenv("MM_ACTIVITY_FILE", str(Path(__file__).with_name("activity.json"))))
 RECOVERY_FILE = Path(os.getenv("MM_RECOVERY_FILE", str(Path(__file__).with_name("recovery.json"))))
@@ -106,21 +105,6 @@ def set_automatic_updates(enabled):
     temporary.write_text(json.dumps({"enabled": enabled}, separators=(",", ":")), encoding="utf-8")
     os.chmod(temporary, 0o600)
     temporary.replace(AUTOMATIC_UPDATES_FILE)
-    return {"enabled": enabled}
-
-def automatic_recovery_enabled():
-    try:
-        return json.loads(AUTOMATIC_RECOVERY_FILE.read_text(encoding="utf-8")).get("enabled", True) is True
-    except (OSError, ValueError, AttributeError):
-        return True
-
-def set_automatic_recovery(enabled):
-    if not isinstance(enabled, bool):
-        raise ValueError("Kies of automatisch herstarten aan of uit staat")
-    temporary = AUTOMATIC_RECOVERY_FILE.with_suffix(".tmp")
-    temporary.write_text(json.dumps({"enabled": enabled}, separators=(",", ":")), encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    temporary.replace(AUTOMATIC_RECOVERY_FILE)
     return {"enabled": enabled}
 
 def automatic_recovery_enabled():
@@ -307,7 +291,6 @@ def snapshot():
     return {"timestamp": int(time.time()), "docker": docker, "containers": containers,
             "storage": disks, "maintenance": maintenance_status(),
             "automaticUpdates": {"enabled": automatic_updates_enabled()},
-            "automaticRecovery": {"enabled": automatic_recovery_enabled()},
             "automaticRecovery": {"enabled": automatic_recovery_enabled()}}
 
 def registry_update_available(image, description):
@@ -357,7 +340,7 @@ def refresh_updates():
 def update_monitor(stop):
     """Start immediately, then retry failed checks every minute."""
     while not stop.is_set():
-        if not monitoring_paused() and automatic_recovery_enabled():
+        if not monitoring_paused():
             try:
                 refresh_updates()
                 if automatic_updates_enabled():
@@ -594,8 +577,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, {"enabled": automatic_updates_enabled()})
             if self.path == "/v1/recovery/settings":
                 return self.reply(200, {"enabled": automatic_recovery_enabled()})
-            if self.path == "/v1/recovery/settings":
-                return self.reply(200, {"enabled": automatic_recovery_enabled()})
             if self.path == "/v1/app/update":
                 return self.reply(200, app_release())
             match = re.fullmatch(r"/v1/containers/([a-zA-Z0-9][a-zA-Z0-9_.-]*)/logs", self.path)
@@ -647,13 +628,6 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/v1/updates/settings":
             try:
                 return self.reply(200, set_automatic_updates(self.json_body().get("enabled")))
-            except ValueError as exc:
-                return self.reply(400, {"error": str(exc)})
-            except OSError:
-                return self.reply(503, {"error": "Instelling kon niet worden opgeslagen"})
-        if self.path == "/v1/recovery/settings":
-            try:
-                return self.reply(200, set_automatic_recovery(self.json_body().get("enabled")))
             except ValueError as exc:
                 return self.reply(400, {"error": str(exc)})
             except OSError:

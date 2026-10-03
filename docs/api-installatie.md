@@ -1,4 +1,10 @@
-# API-installatie — 5 september 2026
+# API-installatie
+
+Huidige situatie (1.0.13): Ubuntu-VM in Proxmox. Bron in deze repo; live map `/home/marco/mediamonster`. Installeer of vernieuw via `backend/install-linux.sh`. Standaardopslag is **NUC 11 = `/`**, plus de NAS-mounts DS224 en DS716. Achtergrondupdatecontrole is onafhankelijk van automatisch herstarten.
+
+De rest van dit bestand is het installatieverslag van 5 september 2026, toen de API nog via WSL/Windows liep.
+
+## Verslag 5 september 2026
 
 Geïnstalleerd:
 - NUC: /home/marco/mediamonster/server.py

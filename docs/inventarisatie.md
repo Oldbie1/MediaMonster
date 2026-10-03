@@ -1,5 +1,8 @@
 # Inventarisatie 5 september 2026
-Bron: actuele alleen-lezen SSH-inventarisatie en eerdere afspraak in "Schrijfproblemen SABnzbd".
+
+Dit was de alleen-lezen inventarisatie toen Docker nog in Linux/WSL op de NUC11 draaide. De huidige host is een Ubuntu-VM in Proxmox. Opslagmeting gebruikt nu **NUC 11 = `/`** (niet `/mnt/c`). NAS-paden DS224 en DS716 zijn gelijk gebleven.
+
+Bron destijds: SSH-inventarisatie en eerdere afspraak in "Schrijfproblemen SABnzbd".
 
 - NUC SSH: marco@192.168.72.23, poort 12107.
 - Docker in Linux/WSL; Compose v5.5.0, Python 3.14.4.
