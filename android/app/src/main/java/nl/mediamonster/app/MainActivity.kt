@@ -968,7 +968,7 @@ class MainActivity : FragmentActivity() {
                         )
                     }
                     if (configuration) {
-                        val appVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "0.7.0"
+                        val appVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0.13"
                         val pushRegistered = prefs.getLong("lastPushRegistration", 0L) > 0L
                         val maintenanceState = data?.optJSONObject("maintenance")
                         AlertDialog(

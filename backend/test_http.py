@@ -58,7 +58,7 @@ class HttpTests(unittest.TestCase):
                     self.assertEqual(response.read(), b"test-apk")
 
     def test_disallowed_container(self):
-        with patch("server.action") as action:
+        with patch("server.container_names", return_value=("sonarr",)), patch("server.action") as action:
             with self.assertRaises(urllib.error.HTTPError) as failure:
                 self.call("/v1/containers/other/start", method="POST", token=server.TOKEN)
             self.assertEqual(failure.exception.code, 403)
