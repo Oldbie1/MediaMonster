@@ -1,3 +1,5 @@
+weekplanning/data/*.db
+weekplanning/.venv/
 .gradle/
 build/
 local.properties

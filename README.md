@@ -13,6 +13,7 @@ Huidige appversie: **1.0.13** (versiecode 45).
 ## Project
 - android/: Kotlin + Jetpack Compose.
 - backend/: Python 3, zonder externe packages; Docker CLI, Compose en Buildx nodig.
+- weekplanning/: aparte webbased weekplanning (FastAPI + SQLite). Niet gemengd met Media Monster. Zie [weekplanning/README.md](weekplanning/README.md).
 - docs/: [installatie](docs/installatie.md), [API](docs/api-installatie.md), [inventarisatie](docs/inventarisatie.md), [teststatus](docs/teststatus.md), [versies](docs/versies.md).
 - releases/: geen APK in Git. Zie [releases/README.md](releases/README.md).
 

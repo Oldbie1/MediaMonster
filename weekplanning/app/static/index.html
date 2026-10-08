@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Weekplanning</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Weekplanning</h1>
+      <p class="sub">Profielen · zaagmachines · Comet</p>
+    </div>
+    <nav>
+      <button class="tab on" data-tab="projecten">Projecten</button>
+      <button class="tab" data-tab="catalogus">Catalogus</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="view-projecten">
+      <div id="drop" class="drop">
+        <strong>Sleep een profielenlijst-PDF hierheen</strong>
+        <span>of kies een bestand. Alleen <em>Artikeloverzicht - Profielen</em>.</span>
+        <input id="pdf-file" type="file" accept="application/pdf">
+      </div>
+      <p id="import-msg" class="msg" hidden></p>
+
+      <div class="split">
+        <aside>
+          <h2>Projecten</h2>
+          <ul id="project-list" class="list"></ul>
+        </aside>
+        <div id="project-detail" class="detail">
+          <p class="empty">Kies een project of drop een PDF.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-catalogus" hidden>
+      <div class="toolbar">
+        <input id="cat-q" type="search" placeholder="Zoek profielnummer…">
+        <button id="btn-new-profile" class="primary">Nieuw profiel</button>
+      </div>
+      <p class="hint">
+        Zaagmatrix (Quadra / BJM / Schirmer / Comet) bewerk je hier.
+        De Excel-seed vult de catalogus bij de eerste start.
+      </p>
+      <div id="cat-table"></div>
+    </section>
+  </main>
+
+  <dialog id="dlg">
+    <form id="profile-form" method="dialog">
+      <h2 id="dlg-title">Profiel</h2>
+      <label>Profielnummer
+        <input name="number" required>
+      </label>
+      <label>Notitie
+        <textarea name="notes" rows="3"></textarea>
+      </label>
+      <fieldset>
+        <legend>Zaagmachines</legend>
+        <div class="flags" id="dlg-flags"></div>
+      </fieldset>
+      <label>Comet-vervolg
+        <select name="comet_followup">
+          <option value="">Geen Comet</option>
+          <option value="Q">Q — na Quadra nog Comet</option>
+          <option value="B">B — na BJM nog Comet</option>
+          <option value="S">S — na Schirmer nog Comet</option>
+          <option value="QS">QS — na Quadra of Schirmer nog Comet</option>
+          <option value="X">X — altijd Comet</option>
+        </select>
+      </label>
+      <menu>
+        <button value="cancel" type="button" id="dlg-cancel">Annuleren</button>
+        <button value="ok" class="primary">Opslaan</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

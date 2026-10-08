@@ -1,0 +1,18 @@
+# Voorbeeld Cloudflare-tunnel, zelfde patroon als orderpicker.
+# Dit bestand is géén live-config: kopieer naar de NAS naast je bestaande
+# cloudflared-config en pas hostname + credentials-file aan.
+#
+# Tunnel zelf aanmaken op een machine met cloudflared:
+#   cloudflared tunnel login
+#   cloudflared tunnel create weekplanning
+#   cloudflared tunnel route dns weekplanning weekplanning.jouwdomein.nl
+#
+# Daarna dit ingress-blok in config.yml (of als extra hostname in de bestaande tunnel).
+
+tunnel: WEEKPLANNING_TUNNEL_ID
+credentials-file: /pad/naar/WEEKPLANNING_TUNNEL_ID.json
+
+ingress:
+  - hostname: weekplanning.jouwdomein.nl
+    service: http://127.0.0.1:8080
+  - service: http_status:404

@@ -1,0 +1,11 @@
+# NAS: map a folder for the SQLite file so backups are a file copy.
+services:
+  weekplanning:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      WEEKPLANNING_DB: /data/weekplanning.db
